@@ -4,9 +4,9 @@
 
 $$\min_{x} \quad c^{T} x$$
 
-$$\text{s.t.} \quad A_ub x \leq b_ub$$
+$$\text{s.t.} \quad A_{ub} x \leq b_{ub}$$
 
-$$\quad \quad A_eq x = b_eq$$
+$$\quad \quad A_{eq} x = b_{eq}$$
 
 $$l \leq x \leq u$$
 
