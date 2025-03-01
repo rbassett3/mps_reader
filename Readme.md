@@ -8,7 +8,7 @@ $$\text{s.t.} \quad A_{ub} x \leq b_{ub}$$
 
 $$\quad \quad A_{eq} x = b_{eq}$$
 
-$$l \leq x \leq u$$
+$$\quad \quad l \leq x \leq u$$
 
-matches the problem saved in the MPS file. In Python, $c, b_ub, b_eq, l, u$ are NumPy arrays and $A_ub$ and $A_eq$ are SciPy sparse arrays.
+matches the problem saved in the MPS file. In Python, $c, b_{ub}, b_{eq}, l, u$ are NumPy arrays and $A_{ub}$ and $A_{eq}$ are SciPy sparse arrays.
 
