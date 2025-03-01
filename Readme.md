@@ -6,7 +6,7 @@ $$\min_{x} \quad c^{T} x$$
 
 $$\text{s.t.} \quad A_ub x \leq b_ub$$
 
-$$\quad \quad $A_eq x = b_eq$$
+$$\quad \quad A_eq x = b_eq$$
 
 $$l \leq x \leq u$$
 
