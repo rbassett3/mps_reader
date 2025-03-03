@@ -279,10 +279,11 @@ def parse_mps_file(path_to_mps_file):
                 'prob_name':prob_name}
     return parsed_file
 
-def eliminate_fixed_variables(prob_data):
+def eliminate_fixed_variables(full_prob_data):
     '''Eliminates fixed variables from the dictionary prob_data containing problem data.
     by substituting the fixed value in place of the each fixed variable
     The dictionary prob_data is modified in place, so this function returns None'''
+    prob_data = full_prob_data.copy() #perform reduction on prob_data
     prob_data['b_eq'] -= prob_data['A_eq'][:, prob_data['fixed_inds']] @ prob_data['fixed_vals']
     prob_data['b_ub'] -= prob_data['A_ub'][:, prob_data['fixed_inds']] @ prob_data['fixed_vals']
     inds_to_keep = np.ones(prob_data['c'].shape[0], dtype=np.bool_)

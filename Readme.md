@@ -36,7 +36,7 @@ In [1]: from mps_reader import read, eliminate_fixed_variables
 
 In [2]: prob_data = read('25fv47') #dictionary containing numpy vectors and sparse mats
 
-In [3]: eliminate_fixed_variables(prob_data) #substitute fixed values for fixed variables
+In [3]: reduced_prob = eliminate_fixed_variables(prob_data) #substitute fixed values for fixed variables
 
 In [4]: from mps_reader import parse_mps_file #if you want to interact with MPS content directly
 
