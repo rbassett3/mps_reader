@@ -4,8 +4,9 @@ import scipy.sparse
 def read(path_to_mps_file):
     '''
     read takes path to an mps file as input and returns
-    a dictionary containing the vectors c, b_ub, b_eq, l, and u
-    and sparse matrices A_ub and C_eq such that the problem
+    a dictionary containing the vectors c, b_ub, b_eq, l, and u,
+    sparse matrices A_ub and A_eq, and the indices and values of
+    any fixed variables such that the problem
     min c.T @ x
     s.t. A_eq @ x = b_eq
          A_ub @ x <= b_ub
@@ -22,8 +23,9 @@ def read(path_to_mps_file):
 def construct_vecs_and_mats(parsed_file_dict):
     '''construct_vecs_and_mats takes a dictionary returned by
     parse_mps_file and returns a dictionary containing
-    the vectors c, b_ub, b_eq, l, and u and sparse matrices
-    A_ub and C_eq such that the problem
+    the vectors c, b_ub, b_eq, l, and u, sparse matrices
+    A_ub and C_eq, and the indices and values of any fixed variables
+    such that the problem
     min c.T @ x
     s.t. A_eq @ x = b_eq
          A_ub @ x <= b_ub
@@ -277,7 +279,10 @@ def parse_mps_file(path_to_mps_file):
                 'prob_name':prob_name}
     return parsed_file
 
-def eliminate_fixed_from_prob_data(prob_data):
+def eliminate_fixed_variables(prob_data):
+    '''Eliminates fixed variables from the dictionary prob_data containing problem data.
+    by substituting the fixed value in place of the each fixed variable
+    The dictionary prob_data is modified in place, so this function returns None'''
     prob_data['b_eq'] -= prob_data['A_eq'][:, prob_data['fixed_inds']] @ prob_data['fixed_vals']
     prob_data['b_ub'] -= prob_data['A_ub'][:, prob_data['fixed_inds']] @ prob_data['fixed_vals']
     inds_to_keep = np.ones(prob_data['c'].shape[0], dtype=np.bool_)
@@ -290,6 +295,7 @@ def eliminate_fixed_from_prob_data(prob_data):
     #make these arrays empty b/c we've eliminated the fixed variables
     prob_data['fixed_inds'] = np.empty(0, dtype=np.int64)
     prob_data['fixed_vals'] = np.empty(0, dtype=np.float64)
+    return prob_data
 
 def get_fields(line):
     field1 = line[1:3].strip()

@@ -21,8 +21,7 @@ pip install git+https://github.com/rbassett3/mps_reader
 
 ## How to Use
 
-The primary user-facing function is `read`, which takes a MPS file path as input and returns a dictionary containing $c, b_{ub}, b_{eq}, l, u, A_{ub}, A_{eq}$.
-
+The primary user-facing function is `read`, which takes a MPS file path as input and returns a dictionary containing $c, b_{ub}, b_{eq}, l, u, A_{ub}, A_{eq}$, and any fixed variables and their values. Fixed values can be substituted in for fixed variables by calling `eliminate_fixed_variables` on the dictionary returned from `read`.
 
 The problem data returned by the `read` function performs some very basic preprocessing by eliminating fixed variables and ignoring any constants added to the objective function. The correspondence between variable/constraint names in the MPS file and indexing in the rows/columns of the constraint matrices is not provided since the primary motivation for this script is benchmarking. For users who prefer to interface directly with the MPS file data directly, the `parse_mps_file` function can be used to return a dictionary containing the rows, columns, rhs, bounds, and ranges provided in the MPS file.
 
@@ -33,9 +32,15 @@ The problem data returned by the `read` function performs some very basic prepro
 2. Open up an `ipython` shell and run:
 
 ```python
-In [1]: from mps_reader import read
+In [1]: from mps_reader import read, eliminate_fixed_variables
 
-In [2]: read('25fv47')
+In [2]: prob_data = read('25fv47') #dictionary containing numpy vectors and sparse mats
+
+In [3]: eliminate_fixed_variables(prob_data) #substitute fixed values for fixed variables
+
+In [4]: from mps_reader import parse_mps_file #if you want to interact with MPS content directly
+
+In [5]: mps_content = parse_mps_file('25fv47') #contains rows, columns, rhs, bounds, and ranges from MPS file
 ```
 
 ## Test Cases
