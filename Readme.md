@@ -45,7 +45,7 @@ In [5]: mps_content = parse_mps_file('25fv47') #contains rows, columns, rhs, bou
 
 ## Test Cases
 
-This project has been validated on all the problems in the [NetLib LP Benchmark](https://netlib.org/lp/data/index.html).
+This project has been validated on all the problems in the [NetLib LP Benchmark](https://netlib.org/lp/data/index.html). To download, decompress, and load the NetLib problems into Python, follow the directions [in the netlib_tests folder](https://github.com/rbassett3/mps_reader/netlib_tests).
 
 ## If You Find This Useful Or Have Questions
 
