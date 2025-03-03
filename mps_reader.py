@@ -4,7 +4,7 @@ import scipy.sparse
 def read(path_to_mps_file):
     '''
     read takes path to an mps file as input and returns
-    a dictionary containing the vectors c, b, b_ub, b_eq, l, and u
+    a dictionary containing the vectors c, b_ub, b_eq, l, and u
     and sparse matrices A_ub and C_eq such that the problem
     min c.T @ x
     s.t. A_eq @ x = b_eq
@@ -15,11 +15,28 @@ def read(path_to_mps_file):
     #this first line contains all the problem data from the mps file
     #including things like variable names. The prob_data just gets the matrices
     #and vectors needs
-    rows, columns, rhs, ranges, bounds, obj_shift, prob_name = parse_mps_file(path_to_mps_file)
-    prob_data = construct_vecs_and_mats(rows, columns, rhs, ranges, bounds)
+    parsed_file_dict = parse_mps_file(path_to_mps_file)
+    prob_data = construct_vecs_and_mats(parsed_file_dict)
     return prob_data 
 
-def construct_vecs_and_mats(rows, columns, rhs, ranges, bounds):
+def construct_vecs_and_mats(parsed_file_dict):
+    '''construct_vecs_and_mats takes a dictionary returned by
+    parse_mps_file and returns a dictionary containing
+    the vectors c, b_ub, b_eq, l, and u and sparse matrices
+    A_ub and C_eq such that the problem
+    min c.T @ x
+    s.t. A_eq @ x = b_eq
+         A_ub @ x <= b_ub
+         l <= x <= u
+    defines the optimization problem in the mps file.
+    '''
+    #extract variables from parsed_file_dict for notational convenience
+    #note that obj_shift and prob_name are not used
+    rows = parsed_file_dict['rows']
+    columns = parsed_file_dict['columns']
+    rhs = parsed_file_dict['rhs']
+    ranges = parsed_file_dict['ranges']
+    bounds = parsed_file_dict['bounds']
     #now we actually build the vectors and matrices
     col_to_ind = dict(zip(columns.keys(), range(len(columns.keys())))) 
     n = len(col_to_ind)
@@ -250,7 +267,15 @@ def parse_mps_file(path_to_mps_file):
                         bounds[this_bnd] += [('LO', bnd_data[2], -np.inf)]
                     else: #LO, UP, FX, MI, or PL variable
                         bounds[this_bnd] += [(bnd_data[0], bnd_data[2], bnd_data[3])]
-    return rows, columns, rhs, ranges, bounds, obj_shift, prob_name
+    #put everything to be returned in a dictionary.
+    parsed_file = {'rows':rows,
+                'columns':columns,
+                'rhs':rhs, 
+                'ranges':ranges,
+                'bounds':bounds, 
+                'obj_shift':obj_shift,
+                'prob_name':prob_name}
+    return parsed_file
 
 def eliminate_fixed_from_prob_data(prob_data):
     prob_data['b_eq'] -= prob_data['A_eq'][:, prob_data['fixed_inds']] @ prob_data['fixed_vals']
