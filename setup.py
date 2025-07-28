@@ -17,7 +17,7 @@ setup(
     url='https://faculty.nps.edu/rbassett/',
     python_requires='>=3.0',
     install_requires=["numpy", "scipy"],
-    packages=find_packages(exclude=['tests']),
+    packages=find_packages(exclude=['netlib_tests']),
     zip_safe=True,
 
 )
