@@ -14,7 +14,8 @@ rm -rf $nld/stocfor3 $nld/stocfor*
 rm -rf $nld/truss
 #move non-problem files to not_problem_data
 mv --backup=numbered $nld/mpc.src $nld/nams.ps.gz $nld/minos $nld/index.html $nld/ascii $nld/changes $nld/emps.* $nld/readme $nld/kennington/readme $nld/kennington/index.html $nlnd
-#compile the C file for decompression
+#compile the C file for decompression\
+if [ -z "$CC" ]; then CC=gcc; fi
 $CC $nlnd/emps.c -o $nlnd/decompress.out
 
 mkdir mps_problems
