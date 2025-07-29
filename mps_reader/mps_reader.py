@@ -298,7 +298,7 @@ def eliminate_fixed_variables(full_prob_data):
     prob_data['fixed_vals'] = np.empty(0, dtype=np.float64)
     return prob_data
 
-def get_fields(line):
+def get_fields_strict(line):
     field1 = line[1:3].strip()
     field2 = line[4:12].strip()
     field3 = line[14:22].strip()
@@ -306,7 +306,45 @@ def get_fields(line):
     field5 = line[39:47].strip()
     field6 = line[49:61].strip()
     return field1, field2, field3, field4, field5, field6
+
+def get_fields_whitespace(line):
+    fields_space = line.split()
+    assert len(fields_space) <= 6, "Data field too long!"
+    fields = fields_space + ['' for _ in range(len(fields_space), 6)]
+    return fields[0], fields[1], fields[2], fields[3], fields[4], fields[5],
     
+ 
+def get_fields(line, strict=True):
+    '''Traditional mps files follow the following format 
+    (which we call strict) for data records
+
+    columns 2 and 3: code field
+    columns 5–12: first name field
+    columns 15–22: second name field
+    columns 25–36: first numeric field
+    columns 40–47: third name field
+    columns 50–61: second numeric field 
+
+    Some files break this and adhere to the following rules 
+    (see https://web.archive.org/web/20050618080243/http://www.mgmt.dal.ca/sba/profs/hgassmann/SMPS2.htm#StochFile)
+    1.Each field is surrounded by white space (one or more blanks) and does not contain an embedded blank.:
+    2.The first name field of a header record must start in column 1.
+    3.Names and numeric information on data records start in column 5 (or further to the right). 
+        The first four columns must be reserved for the code field (which is to be placed into columns 2 and 3).
+    4.Numbers (numerical strings) must start with a digit (or a decimal point immediately followed by a digit). 
+        Exponential notation (e.g., 1.E–5 or .3e+6) is allowed.
+    5.Names (character strings) have no embedded blanks and must start with a non-numeric character. 
+        (‘plus2’, ‘an_extremely_long_and_tedious_name’, ‘.cost’ and ‘$1000’ are all valid names, but ‘sp ace’, ‘2B’ and ‘.5off’ are not.)
+
+    to toggle between the types of field parsing, use the strict keyword. 
+    The default is strict=True.
+    '''
+    if strict:
+        return get_fields_strict(line)
+    else:
+        return get_fields_whitespace(line)
+        
+   
 def reset_flags_to_false(flags):
     for key in flags.keys():
         flags[key] = False
