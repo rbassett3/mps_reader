@@ -1,7 +1,7 @@
 import numpy as np
 import scipy.sparse
 
-def read(path_to_mps_file):
+def read(path_to_mps_file, strict=True):
     '''
     read takes path to an mps file as input and returns
     a dictionary containing the vectors c, b_ub, b_eq, l, and u,
@@ -16,7 +16,7 @@ def read(path_to_mps_file):
     #this first line contains all the problem data from the mps file
     #including things like variable names. The prob_data just gets the matrices
     #and vectors needs
-    parsed_file_dict = parse_mps_file(path_to_mps_file)
+    parsed_file_dict = parse_mps_file(path_to_mps_file, strict=strict)
     prob_data = construct_vecs_and_mats(parsed_file_dict)
     return prob_data 
 
@@ -24,7 +24,7 @@ def construct_vecs_and_mats(parsed_file_dict):
     '''construct_vecs_and_mats takes a dictionary returned by
     parse_mps_file and returns a dictionary containing
     the vectors c, b_ub, b_eq, l, and u, sparse matrices
-    A_ub and C_eq, and the indices and values of any fixed variables
+    A_ub and A_eq, and the indices and values of any fixed variables
     such that the problem
     min c.T @ x
     s.t. A_eq @ x = b_eq
@@ -157,13 +157,13 @@ def construct_vecs_and_mats(parsed_file_dict):
     return {'c':c, 'A_eq':A_eq, 'A_ub':A_ub, 'b_eq':b_eq, 'b_ub':b_ub, 'l':l, 'u':u,\
             'fixed_inds':fixed_inds, 'fixed_vals':fixed_vals}
 
-def parse_mps_file(path_to_mps_file):
+def parse_mps_file(path_to_mps_file, strict=True):
     '''takes mps file path as input and returns five dictionaries, the constant
     shift of the objective, and the name of the problem. The five dictionaries are:
     1. rows: has row names as keys and kind (N, L, G, E) as values
     2. columns: has columns as keys and lists of (row name, value) pairs as values
     3. rhs: has rhs name as key and list of of (row name, value) pairs as values
-    4. ranges: has range name as key and list of of (row name, value) pairs as values
+    4. ranges: has range name as key and list of (row name, value) pairs as values
     5. bounds: has bound name as key and list of (kind, column, value) tuples as values
     '''
     flags = {'in_rows':False, 'in_columns':False, 'in_bounds':False, 'in_rhs':False,\
@@ -173,11 +173,14 @@ def parse_mps_file(path_to_mps_file):
     rhs = {}
     bounds = {}
     ranges = {}
+    ints = [] #columns which are denoted integer via MARKER
     this_col = ' '
     this_rhs = ' '
     this_bnd = ' '
     this_range = ' '
     obj_shift = 0.
+    is_int = False #are we in an integer marker block?
+    get_fields = lambda x: get_fields_(x, strict=strict)
 
     with open(path_to_mps_file, 'r') as f:
         for line in f:
@@ -206,19 +209,34 @@ def parse_mps_file(path_to_mps_file):
                 rows[name] = kind
             elif flags['in_columns']:
                 col_data = get_fields(line)[1:] #first entry of column line is empty
-                if col_data[0] != this_col: #column name hasn't been seen. We need to add it
-                    #this works b/c all entries associated with a column must occur consecutively
-                    #I use the same logic to detect new rhs and bounds.
-                    this_col = col_data[0]
-                    #columns[col] = [(row_name, value_in_row), ...] for all the rows
-                    columns[this_col] = [(col_data[1], col_data[2])]
-                    for i in range(3, len(col_data), 2):
-                        if col_data[i+1] != '':
-                            columns[this_col] += [(col_data[i], col_data[i+1])]
-                else:  #column has been seen. We need to add new values to existing list
-                    for i in range(1, len(col_data), 2):
-                        if col_data[i+1] != '':
-                            columns[this_col] += [(col_data[i], col_data[i+1])]
+                if col_data[1] == "'MARKER'": #marker for integer variables. SOS not supported yet
+                    #but could be replicating this construction for that marker
+                    if col_data[2] == "'INTORG'":
+                        is_int = True
+                    elif col_data[2] == "'INTEND'":
+                        is_int = False
+                    else:
+                        raise ValueError("MARKER has unrecognized label " + col_data[2])
+                else:
+                    if col_data[0] != this_col: #column name hasn't been seen. We need to add it
+                        #this works b/c all entries associated with a column must occur consecutively
+                        #I use the same logic to detect new rhs and bounds.
+                        this_col = col_data[0]
+                        #columns[col] = [(row_name, value_in_row), ...] for all the rows
+                        columns[this_col] = [(col_data[1], col_data[2])]
+                        if is_int:
+                            ints.append(this_col)
+                        for i in range(3, len(col_data), 2):
+                            if col_data[i+1] != '':
+                                columns[this_col] += [(col_data[i], col_data[i+1])]
+                                if is_int:
+                                    ints.append(this_col)
+                    else:  #column has been seen. We need to add new values to existing list
+                        for i in range(1, len(col_data), 2):
+                            if col_data[i+1] != '':
+                                columns[this_col] += [(col_data[i], col_data[i+1])]
+                                if is_int:
+                                    ints.append(this_col)
             elif flags['in_rhs']:
                 rhs_data = get_fields(line)[1:] #first entry of rhs line is empty
                 if rhs_data[0] != this_rhs: #new rhs. need to add it to dictionary
@@ -276,6 +294,7 @@ def parse_mps_file(path_to_mps_file):
                 'ranges':ranges,
                 'bounds':bounds, 
                 'obj_shift':obj_shift,
+                'integers':ints,
                 'prob_name':prob_name}
     return parsed_file
 
@@ -308,13 +327,14 @@ def get_fields_strict(line):
     return field1, field2, field3, field4, field5, field6
 
 def get_fields_whitespace(line):
-    fields_space = line.split()
+    code_field = line[1:3].strip() #first one is tricky
+    fields_space = [code_field] + line[4:].split()
     assert len(fields_space) <= 6, "Data field too long!"
     fields = fields_space + ['' for _ in range(len(fields_space), 6)]
     return fields[0], fields[1], fields[2], fields[3], fields[4], fields[5],
     
  
-def get_fields(line, strict=True):
+def get_fields_(line, strict=True):
     '''Traditional mps files follow the following format 
     (which we call strict) for data records
 
