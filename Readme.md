@@ -1,6 +1,6 @@
 # MPS Parser for Python
 
-`mps_reader` is a Python script for parsing [MPS (Mathematical Programming System)](https://en.wikipedia.org/wiki/MPS_(format)) files. Its primary purpose is to convert linear programs saved in MPS format to problem data $c, b_{ub}, b_{eq}, l, u, A_{ub}, A_{eq}$ such that the problem
+`mps_reader` is a Python package for parsing [MPS (Mathematical Programming System)](https://en.wikipedia.org/wiki/MPS_(format)) files. Its primary purpose is to convert linear programs saved in MPS format to problem data $c, b_{ub}, b_{eq}, l, u, A_{ub}, A_{eq}$ such that the problem
 
 $$\min_{x} \quad c^{T} x$$
 
