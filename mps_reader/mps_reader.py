@@ -17,18 +17,19 @@ def read(path_to_mps_file, strict=True):
     #including things like variable names. The prob_data just gets the matrices
     #and vectors needs
     parsed_file_dict = parse_mps_file(path_to_mps_file, strict=strict)
-    prob_data = construct_vecs_and_mats(parsed_file_dict)
-    return prob_data 
+    matrix_data = extract_matrix_data(parsed_file_dict)
+    expanded_system = expand_matrix_data(matrix_data)
+    return expanded_system
 
-def construct_vecs_and_mats(parsed_file_dict):
+def extract_matrix_data(parsed_file_dict):
     '''construct_vecs_and_mats takes a dictionary returned by
     parse_mps_file and returns a dictionary containing
-    the vectors c, b_ub, b_eq, l, and u, sparse matrices
-    A_ub and A_eq, and the indices and values of any fixed variables
+    the vectors c, b, l, and u, sparse matrix
+    A, boolean vector ineq_b and A_eq, and the indices and values of any fixed variables
     such that the problem
     min c.T @ x
-    s.t. A_eq @ x = b_eq
-         A_ub @ x <= b_ub
+    s.t. A[ineq_b,:] @ x <= b[ineq_b]
+         A[~ineq_b,:] @ x = b[~ineq_b]
          l <= x <= u
     defines the optimization problem in the mps file.
     '''
@@ -45,7 +46,6 @@ def construct_vecs_and_mats(parsed_file_dict):
     rows_in_objs = [row for row in rows.keys() if rows[row]=='N']
     assert len(rows_in_objs) == 1, "More than 1 objective specified"
     #number of inequality constraints is number of rows w/ type E
-    rows_in_eq_ind = [row for row in rows.keys() if rows[row]=='E']
     #number of inequality constraints is number of rows w/ type L or G + 
     #number of additional L and G constraints implied by RANGE
     #the range constraints have an emoji added to their labels
@@ -53,17 +53,21 @@ def construct_vecs_and_mats(parsed_file_dict):
     #by adding an emoji we guarantee no conflict with another
     #row name since mps only permits ascii characters
     #surprisingly, range on a E row yields two inequality constraints
-    rows_in_ub_ind = [row for row in rows.keys() if rows[row] in ['L','G']] +\
-        [row+"\U0001f600" for range_ in ranges.values()\
-            for (row, value) in range_ if rows[row] in ['L','G']]+\
-        [row+"\U0001f600" for range_ in ranges.values()\
-            for (row, value) in range_ if rows[row]=='E']+\
-        [row+"\U0001f606" for range_ in ranges.values()\
-            for (row, value) in range_ if rows[row]=='E']
-    m1 = len(rows_in_eq_ind)
-    m2 = len(rows_in_ub_ind)
-    row_to_eq_ind = dict(zip(rows_in_eq_ind, range(m1)))
-    row_to_ub_ind = dict(zip(rows_in_ub_ind, range(m2)))
+    #first line of below is equality constraints
+    range_expanded = []
+    for range_ in ranges.values():
+        for row, value in range_:
+            if rows[row] in ['L', 'G']:
+                range_expanded.append(row+"\U0001f600")
+            elif rows[row] == 'E': #range for equality yields 2 ineq constraints
+                range_expanded.append(row+"\U0001f600") #lower bound part of the range
+                range_expanded.append(row+"\U0001f606") #upper bound part of the range
+            else:
+                raise ValueError("Row kind " + rows[row] + " not recognized")
+    rows_expanded = list([row for row in rows.keys() if rows[row] != 'N']) + range_expanded
+
+    m = len(rows_expanded)
+    row_to_ind = dict(zip(rows_expanded, range(m)))
     #number of fixed variables. We'll treat these separately
     num_fixed = len([kind for bnds in bounds.values() for (kind, col, val) in bnds if kind=='FX'])
     fixed_inds = np.empty(num_fixed, dtype=np.int64)
@@ -73,10 +77,9 @@ def construct_vecs_and_mats(parsed_file_dict):
     c = np.zeros(n)
     l = np.zeros(n)
     u = np.inf*np.ones(n)
-    b_eq = np.zeros(m1)
-    b_ub = np.zeros(m2)
-    A_eq = scipy.sparse.dok_matrix((m1, n), dtype=np.float64)
-    A_ub = scipy.sparse.dok_matrix((m2, n), dtype=np.float64)
+    b = np.zeros(m)
+    b_ineq = np.zeros(m, dtype=np.bool_) #boolean flag for whether the constraint is an ineq
+    A = scipy.sparse.dok_matrix((m, n), dtype=np.float64)
 
     #loop through column section to build c vector and A matrices
     for column in columns.keys():
@@ -85,23 +88,29 @@ def construct_vecs_and_mats(parsed_file_dict):
             col_ind = col_to_ind[column]
             if rows[row]=='N': #objective
                 c[col_ind] = value
-            elif rows[row]=='L': #lower bound. negate b/c we only keep track of A_ub @ x <= b_ub
-                A_ub[row_to_ub_ind[row], col_ind] = -1.0*float(value)
+            elif rows[row]=='L': #lower bound. negate b/c we only keep track of A @ x <= b
+                row_ind = row_to_ind[row]
+                A[row_ind, col_ind] = -1.0*float(value)
+                b_ineq[row_ind] = True
             elif rows[row]=='G': #upper bound. don't have to negate
-                A_ub[row_to_ub_ind[row], col_ind] = float(value)
+                row_ind = row_to_ind[row]
+                A[row_ind, col_ind] = float(value)
+                b_ineq[row_ind] = True
             elif rows[row]=='E': #equality constraint
-                A_eq[row_to_eq_ind[row], col_ind] = float(value)
+                row_ind = row_to_ind[row]
+                A[row_ind, col_ind] = float(value)
             else:
                 raise ValueError("Row kind " + rows[row] + " not recognized")
     #loop through rhs to build b vectors
     for this_rhs_name in rhs.keys():
         for (row, value) in rhs[this_rhs_name]:
-            if rows[row]=='L': #lower bound. negate b/c we only keep track of A_ub @ x <= b_ub
-                b_ub[row_to_ub_ind[row]] = -1.0*float(value)
+            row_ind = row_to_ind[row]
+            if rows[row]=='L': #lower bound. negate b/c we only keep track of A @ x <= b
+                b[row_ind] = -1.0*float(value)
             elif rows[row]=='G': #upper bound. don't have to negate
-                b_ub[row_to_ub_ind[row]] = float(value)
+                b[row_ind] = float(value)
             elif rows[row]=='E': #equality constraint
-                b_eq[row_to_eq_ind[row]] = float(value)
+                b[row_ind] = float(value)
             else:
                 raise ValueError("Row kind " + rows[row] + " not recognized")
     for range_ in ranges.keys():
@@ -111,25 +120,31 @@ def construct_vecs_and_mats(parsed_file_dict):
             #is in page 164 of Advanced Linear Programming by Murtagh
             #note that per the mps rules ROWS must come before RANGE (if RANGE exists)
             if rows[row]=='L': #Range adds an upper bound of b[i] + abs(r[i])
-                A_ub[row_to_ub_ind[row+"\U0001f600"],:] = A_ub[row_to_ub_ind[row],:]
-                b_ub[row_to_ub_ind[row+"\U0001f600"]] = b_ub[row_to_ub_ind[row]]+abs(float(value))
+                A[row_to_ind[row+"\U0001f600"],:] = A[row_to_ind[row],:]
+                b[row_to_ind[row+"\U0001f600"]] = b[row_to_ind[row]]+abs(float(value))
+                b_ineq[row_to_ind[row+"\U0001f600"]] = True
             elif rows[row]=='G': #Range adds a lower bound of b[i] - abs(r[i])
-                A_ub[row_to_ub_ind[row+"\U0001f600"],:] = -A_ub[row_to_ub_ind[row],:]
-                b_ub[row_to_ub_ind[row+"\U0001f600"]] = -1.*(b_ub[row_to_ub_ind[row]]-abs(float(value)))
+                A[row_to_ind[row+"\U0001f600"],:] = -A[row_to_ind[row],:]
+                b[row_to_ind[row+"\U0001f600"]] = -1.*(b[row_to_ind[row]]-abs(float(value)))
+                b_ineq[row_to_ind[row+"\U0001f600"]] = True
             elif rows[row]=='E': #equality constraint. Adds an upper and a lower bound
                 #where value depends on the sign
                 sign_val = float(value) >= 0
                 if sign_val: #(b, b+|r|) constraint
-                    A_ub[row_to_ub_ind[row+"\U0001f600"],:] = -A_ub[row_to_ub_ind[row],:]
-                    b_ub[row_to_ub_ind[row+"\U0001f600"]] = -1.*b_ub[row_to_ub_ind[row]]
-                    A_ub[row_to_ub_ind[row+"\U0001f606"],:] = A_ub[row_to_ub_ind[row],:]
-                    b_ub[row_to_ub_ind[row+"\U0001f606"]] = b_ub[row_to_ub_ind[row]]+abs(float(value))
+                    A[row_to_ind[row+"\U0001f600"],:] = -A[row_to_ind[row],:]
+                    b[row_to_ind[row+"\U0001f600"]] = -1.*b[row_to_ind[row]]
+                    b_ineq[row_to_ind[row+"\U0001f600"]] = True
+                    A[row_to_ind[row+"\U0001f606"],:] = A[row_to_ind[row],:]
+                    b[row_to_ind[row+"\U0001f606"]] = b[row_to_ind[row]]+abs(float(value))
+                    b_ineq[row_to_ind[row+"\U0001f606"]] = True
                 else: #(b-|r|, b) constraint
-                    A_ub[row_to_ub_ind[row+"\U0001f600"],:] = -A_ub[row_to_ub_ind[row],:]
-                    b_ub[row_to_ub_ind[row+"\U0001f600"]] = -1.*(b_ub[row_to_ub_ind[row]]-\
+                    A[row_to_ind[row+"\U0001f600"],:] = -A[row_to_ind[row],:]
+                    b[row_to_ind[row+"\U0001f600"]] = -1.*(b[row_to_ind[row]]-\
                                                                 abs(float(value)))
-                    A_ub[row_to_ub_ind[row+"\U0001f606"],:] = A_ub[row_to_ub_ind[row],:]
-                    b_ub[row_to_ub_ind[row+"\U0001f606"]] = b_ub[row_to_ub_ind[row]]
+                    b_ineq[row_to_ind[row+"\U0001f600"]] = True
+                    A[row_to_ind[row+"\U0001f606"],:] = A[row_to_ind[row],:]
+                    b[row_to_ind[row+"\U0001f606"]] = b[row_to_ind[row]]
+                    b_ineq[row_to_ind[row+"\U0001f606"]] = True
             else:
                 raise ValueError("Row kind " + rows[row] + " not recognized")
     #loop through bounds to build l and u vectors
@@ -152,10 +167,32 @@ def construct_vecs_and_mats(parsed_file_dict):
             else:
                 raise ValueError("Bound kind " + kind + " not recognized")
     #convert the completed matrices from dok to csr
-    A_eq = scipy.sparse.csr_matrix(A_eq)
-    A_ub = scipy.sparse.csr_matrix(A_ub)
-    return {'c':c, 'A_eq':A_eq, 'A_ub':A_ub, 'b_eq':b_eq, 'b_ub':b_ub, 'l':l, 'u':u,\
-            'fixed_inds':fixed_inds, 'fixed_vals':fixed_vals}
+    A = scipy.sparse.csr_matrix(A)
+    return {'c':c, 'A':A, 'b':b, 'b_ineq':b_ineq, 'l':l, 'u':u,\
+            'fixed_inds':fixed_inds, 'fixed_vals':fixed_vals,\
+            'row_labels':list(row_to_ind.keys()),\
+            'col_labels':list(col_to_ind.keys())}
+
+def expand_matrix_data(matrix_data):
+    '''expand_matrix_data takes a dictionary returned by
+    extract_matrix_data and returns a dictionary containing
+    the vectors c, b_ub, b_eq, l, and u, sparse matrices
+    A_ub and A_eq, and the indices and values of any fixed variables
+    such that the problem
+    min c.T @ x
+    s.t. A_eq @ x = b_eq
+         A_ub @ x <= b_ub
+         l <= x <= u
+    defines the optimization problem in the mps file.
+    '''
+    md = matrix_data 
+    c, A, b, b_ineq, l, u, fixed_inds, fixed_vals, row_labs, col_labs=\
+        md['c'], md['A'], md['b'], md['b_ineq'], md['l'], md['u'],\
+        md['fixed_inds'], md['fixed_vals'], md['row_labels'], md['col_labels']
+    return {'c':c, 'A_eq':A[~b_ineq,:], 'A_ub':A[b_ineq,:],\
+            'b_eq':b[~b_ineq], 'b_ub':b[b_ineq], 'l':l, 'u':u,\
+            'fixed_inds':fixed_inds, 'fixed_vals':fixed_vals,\
+            'row_labels':row_labs, 'col_labels':col_labs}
 
 def parse_mps_file(path_to_mps_file, strict=True):
     '''takes mps file path as input and returns five dictionaries, the constant
@@ -298,17 +335,16 @@ def parse_mps_file(path_to_mps_file, strict=True):
                 'prob_name':prob_name}
     return parsed_file
 
-def eliminate_fixed_variables(full_prob_data):
+def eliminate_fixed_variables(matrix_data):
     '''Eliminates fixed variables from the dictionary prob_data containing problem data.
     by substituting the fixed value in place of the each fixed variable
     The dictionary prob_data is modified in place, so this function returns None'''
-    prob_data = full_prob_data.copy() #perform reduction on prob_data
-    prob_data['b_eq'] -= prob_data['A_eq'][:, prob_data['fixed_inds']] @ prob_data['fixed_vals']
-    prob_data['b_ub'] -= prob_data['A_ub'][:, prob_data['fixed_inds']] @ prob_data['fixed_vals']
+    prob_data = matrix_data.copy() #perform reduction on prob_data
+    prob_data['b'] -= prob_data['A'][:, prob_data['fixed_inds']] @ prob_data['fixed_vals']
     inds_to_keep = np.ones(prob_data['c'].shape[0], dtype=np.bool_)
     inds_to_keep[prob_data['fixed_inds']] = False
-    prob_data['A_eq'] = prob_data['A_eq'][:,inds_to_keep]
-    prob_data['A_ub'] = prob_data['A_ub'][:,inds_to_keep]
+    prob_data['b_ineq'] = prob_data['b_ineq']
+    prob_data['A'] = prob_data['A'][:,inds_to_keep]
     prob_data['c'] = prob_data['c'][inds_to_keep]
     prob_data['l'] = prob_data['l'][inds_to_keep]
     prob_data['u'] = prob_data['u'][inds_to_keep]
