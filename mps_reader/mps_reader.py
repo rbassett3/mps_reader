@@ -1,5 +1,6 @@
 import numpy as np
 import scipy.sparse
+import warnings
 
 def read(path_to_mps_file, strict=True):
     '''
@@ -78,7 +79,7 @@ def extract_matrix_data(parsed_file_dict):
     l = np.zeros(n)
     u = np.inf*np.ones(n)
     b = np.zeros(m)
-    b_ineq = np.zeros(m, dtype=np.bool_) #boolean flag for whether the constraint is an ineq
+    ineq_b = np.zeros(m, dtype=np.bool_) #boolean flag for whether the constraint is an ineq
     A = scipy.sparse.dok_matrix((m, n), dtype=np.float64)
 
     #loop through column section to build c vector and A matrices
@@ -91,11 +92,11 @@ def extract_matrix_data(parsed_file_dict):
             elif rows[row]=='L': #lower bound. negate b/c we only keep track of A @ x <= b
                 row_ind = row_to_ind[row]
                 A[row_ind, col_ind] = -1.0*float(value)
-                b_ineq[row_ind] = True
+                ineq_b[row_ind] = True
             elif rows[row]=='G': #upper bound. don't have to negate
                 row_ind = row_to_ind[row]
                 A[row_ind, col_ind] = float(value)
-                b_ineq[row_ind] = True
+                ineq_b[row_ind] = True
             elif rows[row]=='E': #equality constraint
                 row_ind = row_to_ind[row]
                 A[row_ind, col_ind] = float(value)
@@ -122,29 +123,29 @@ def extract_matrix_data(parsed_file_dict):
             if rows[row]=='L': #Range adds an upper bound of b[i] + abs(r[i])
                 A[row_to_ind[row+"\U0001f600"],:] = A[row_to_ind[row],:]
                 b[row_to_ind[row+"\U0001f600"]] = b[row_to_ind[row]]+abs(float(value))
-                b_ineq[row_to_ind[row+"\U0001f600"]] = True
+                ineq_b[row_to_ind[row+"\U0001f600"]] = True
             elif rows[row]=='G': #Range adds a lower bound of b[i] - abs(r[i])
                 A[row_to_ind[row+"\U0001f600"],:] = -A[row_to_ind[row],:]
                 b[row_to_ind[row+"\U0001f600"]] = -1.*(b[row_to_ind[row]]-abs(float(value)))
-                b_ineq[row_to_ind[row+"\U0001f600"]] = True
+                ineq_b[row_to_ind[row+"\U0001f600"]] = True
             elif rows[row]=='E': #equality constraint. Adds an upper and a lower bound
                 #where value depends on the sign
                 sign_val = float(value) >= 0
                 if sign_val: #(b, b+|r|) constraint
                     A[row_to_ind[row+"\U0001f600"],:] = -A[row_to_ind[row],:]
                     b[row_to_ind[row+"\U0001f600"]] = -1.*b[row_to_ind[row]]
-                    b_ineq[row_to_ind[row+"\U0001f600"]] = True
+                    ineq_b[row_to_ind[row+"\U0001f600"]] = True
                     A[row_to_ind[row+"\U0001f606"],:] = A[row_to_ind[row],:]
                     b[row_to_ind[row+"\U0001f606"]] = b[row_to_ind[row]]+abs(float(value))
-                    b_ineq[row_to_ind[row+"\U0001f606"]] = True
+                    ineq_b[row_to_ind[row+"\U0001f606"]] = True
                 else: #(b-|r|, b) constraint
                     A[row_to_ind[row+"\U0001f600"],:] = -A[row_to_ind[row],:]
                     b[row_to_ind[row+"\U0001f600"]] = -1.*(b[row_to_ind[row]]-\
                                                                 abs(float(value)))
-                    b_ineq[row_to_ind[row+"\U0001f600"]] = True
+                    ineq_b[row_to_ind[row+"\U0001f600"]] = True
                     A[row_to_ind[row+"\U0001f606"],:] = A[row_to_ind[row],:]
                     b[row_to_ind[row+"\U0001f606"]] = b[row_to_ind[row]]
-                    b_ineq[row_to_ind[row+"\U0001f606"]] = True
+                    ineq_b[row_to_ind[row+"\U0001f606"]] = True
             else:
                 raise ValueError("Row kind " + rows[row] + " not recognized")
     #loop through bounds to build l and u vectors
@@ -159,16 +160,19 @@ def extract_matrix_data(parsed_file_dict):
                 fixed_inds[fixed_itr] = col_to_ind[column]
                 fixed_vals[fixed_itr] = float(value)
                 fixed_itr += 1
-            elif kind == 'MI': #x \in (-\infty, 0)
+            elif kind == 'MI': #x \in [-\infty, 0)
                 u[col_to_ind[column]] = 0.0
                 l[col_to_ind[column]] = -np.inf
-            elif kind == "PL": #x \in (0, \infty)
+            elif kind == 'BV': #this is binary variable. We relax to x \in [0,1]
+                u[col_to_ind[column]] = 1.0
+                l[col_to_ind[column]] = 0.0
+            elif kind == "PL": #x \in [0, \infty)
                 continue #this is the default bound. Nothing to do
             else:
                 raise ValueError("Bound kind " + kind + " not recognized")
     #convert the completed matrices from dok to csr
     A = scipy.sparse.csr_matrix(A)
-    return {'c':c, 'A':A, 'b':b, 'b_ineq':b_ineq, 'l':l, 'u':u,\
+    return {'c':c, 'A':A, 'b':b, 'ineq_b':ineq_b, 'l':l, 'u':u,\
             'fixed_inds':fixed_inds, 'fixed_vals':fixed_vals,\
             'row_labels':list(row_to_ind.keys()),\
             'col_labels':list(col_to_ind.keys())}
@@ -186,11 +190,11 @@ def expand_matrix_data(matrix_data):
     defines the optimization problem in the mps file.
     '''
     md = matrix_data 
-    c, A, b, b_ineq, l, u, fixed_inds, fixed_vals, row_labs, col_labs=\
-        md['c'], md['A'], md['b'], md['b_ineq'], md['l'], md['u'],\
+    c, A, b, ineq_b, l, u, fixed_inds, fixed_vals, row_labs, col_labs=\
+        md['c'], md['A'], md['b'], md['ineq_b'], md['l'], md['u'],\
         md['fixed_inds'], md['fixed_vals'], md['row_labels'], md['col_labels']
-    return {'c':c, 'A_eq':A[~b_ineq,:], 'A_ub':A[b_ineq,:],\
-            'b_eq':b[~b_ineq], 'b_ub':b[b_ineq], 'l':l, 'u':u,\
+    return {'c':c, 'A_eq':A[~ineq_b,:], 'A_ub':A[ineq_b,:],\
+            'b_eq':b[~ineq_b], 'b_ub':b[ineq_b], 'l':l, 'u':u,\
             'fixed_inds':fixed_inds, 'fixed_vals':fixed_vals,\
             'row_labels':row_labs, 'col_labels':col_labs}
 
@@ -221,12 +225,20 @@ def parse_mps_file(path_to_mps_file, strict=True):
 
     with open(path_to_mps_file, 'r') as f:
         for line in f:
-            if line[0] != ' ':
+            #* in 1st field denotes comment.
+            if line[0] =='*': continue
+            #otherwise we see if it has a section header
+            if line[0] != ' ': 
                 reset_flags_to_false(flags)
                 sec_name = line.split()[0]
                 #print("In section ", sec_name) 
                 if sec_name == "NAME":
-                    prob_name = line.split()[1]
+                    line_split = line.split()
+                    if len(line_split) == 1:
+                        warnings.warn("Problem has no name. Using empty string")
+                        prob_name=''
+                    else: 
+                        prob_name = line.split()[1]
                 elif sec_name == "ROWS":
                    flags['in_rows'] = True 
                 elif sec_name == "COLUMNS":
@@ -315,14 +327,14 @@ def parse_mps_file(path_to_mps_file, strict=True):
                         #since variables are assumed to be in (0, np.inf) if
                         #a bound is not provided we only need to change the lower bound
                         bounds[this_bnd] = [('LO', bnd_data[2], -np.inf)]
-                    else: #LO, UP, FX, MI, or PL variable
+                    else: #LO, UP, FX, MI, BV, or PL variable
                         bounds[this_bnd] = [(bnd_data[0], bnd_data[2], bnd_data[3])]
                 else: #bound we have seen. need to add its values to existing list
                     if bnd_data[0] == 'FR': #unconstrained variable
                         #since in MPS format variables are assumed to be in (0, np.inf) if
                         #a bound is not provided we only need to change the lower bound
                         bounds[this_bnd] += [('LO', bnd_data[2], -np.inf)]
-                    else: #LO, UP, FX, MI, or PL variable
+                    else: #LO, UP, FX, MI, BV, or PL variable
                         bounds[this_bnd] += [(bnd_data[0], bnd_data[2], bnd_data[3])]
     #put everything to be returned in a dictionary.
     parsed_file = {'rows':rows,
@@ -343,7 +355,6 @@ def eliminate_fixed_variables(matrix_data):
     prob_data['b'] -= prob_data['A'][:, prob_data['fixed_inds']] @ prob_data['fixed_vals']
     inds_to_keep = np.ones(prob_data['c'].shape[0], dtype=np.bool_)
     inds_to_keep[prob_data['fixed_inds']] = False
-    prob_data['b_ineq'] = prob_data['b_ineq']
     prob_data['A'] = prob_data['A'][:,inds_to_keep]
     prob_data['c'] = prob_data['c'][inds_to_keep]
     prob_data['l'] = prob_data['l'][inds_to_keep]
@@ -363,9 +374,13 @@ def get_fields_strict(line):
     return field1, field2, field3, field4, field5, field6
 
 def get_fields_whitespace(line):
+    '''get fields where we just separate them by whitespace
+    instead of strict character limits.'''
     code_field = line[1:3].strip() #first one is tricky
     fields_space = [code_field] + line[4:].split()
-    assert len(fields_space) <= 6, "Data field too long!"
+    #check if field is too long, while ignoring comments
+    assert len(fields_space) <= 6 or line[0]=='*',\
+         "Data field too long!"
     fields = fields_space + ['' for _ in range(len(fields_space), 6)]
     return fields[0], fields[1], fields[2], fields[3], fields[4], fields[5],
     
