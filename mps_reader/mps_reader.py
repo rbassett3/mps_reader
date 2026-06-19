@@ -173,7 +173,7 @@ def extract_matrix_data(parsed_file_dict):
             elif kind == 'BV': #this is binary variable. We relax to x \in [0,1]
                 u[col_to_ind[column]] = 1.0
                 l[col_to_ind[column]] = 0.0
-            elif kind == 'FR' #free variable. In (-\infty, infty)
+            elif kind == 'FR': #free variable. In (-\infty, infty)
                 l[col_to_ind[column]] = -np.inf
             elif kind == "PL": #x \in [0, \infty)
                 continue #this is the default bound. Nothing to do
