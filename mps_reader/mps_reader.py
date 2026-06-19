@@ -124,13 +124,13 @@ def extract_matrix_data(parsed_file_dict):
             #the row it references is of kind G, L, or E. What I do here
             #is in page 164 of Advanced Linear Programming by Murtagh
             #note that per the mps rules ROWS must come before RANGE (if RANGE exists)
-            if rows[row]=='L': #Range adds an upper bound of b[i] + abs(r[i])
-                A[row_to_ind[row+"\U0001f600"],:] = A[row_to_ind[row],:]
-                b[row_to_ind[row+"\U0001f600"]] = b[row_to_ind[row]]+abs(float(value))
-                ineq_b[row_to_ind[row+"\U0001f600"]] = True
-            elif rows[row]=='G': #Range adds a lower bound of b[i] - abs(r[i])
+            if rows[row]=='L': #Range adds a lower bound of b[i] - abs(r[i])
                 A[row_to_ind[row+"\U0001f600"],:] = -A[row_to_ind[row],:]
                 b[row_to_ind[row+"\U0001f600"]] = -1.*(b[row_to_ind[row]]-abs(float(value)))
+                ineq_b[row_to_ind[row+"\U0001f600"]] = True
+            elif rows[row]=='G': #Range adds an upper bound of b[i] + abs(r[i])
+                A[row_to_ind[row+"\U0001f600"],:] = A[row_to_ind[row],:]
+                b[row_to_ind[row+"\U0001f600"]] = (b[row_to_ind[row]]+abs(float(value)))
                 ineq_b[row_to_ind[row+"\U0001f600"]] = True
             elif rows[row]=='E': #equality constraint. Adds an upper and a lower bound
                 #where value depends on the sign
