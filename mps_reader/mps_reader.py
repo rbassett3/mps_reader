@@ -125,6 +125,7 @@ def extract_matrix_data(parsed_file_dict):
             #is in page 164 of Advanced Linear Programming by Murtagh
             #note that per the mps rules ROWS must come before RANGE (if RANGE exists)
             if rows[row]=='L': #Range adds a lower bound of b[i] - abs(r[i])
+                #negate b/c this is a lower bound
                 A[row_to_ind[row+"\U0001f600"],:] = -A[row_to_ind[row],:]
                 b[row_to_ind[row+"\U0001f600"]] = -1.*(b[row_to_ind[row]]-abs(float(value)))
                 ineq_b[row_to_ind[row+"\U0001f600"]] = True
@@ -136,6 +137,7 @@ def extract_matrix_data(parsed_file_dict):
                 #where value depends on the sign
                 sign_val = float(value) >= 0
                 if sign_val: #(b, b+|r|) constraint
+                    #negate the b bound b/c it's a lower bound
                     A[row_to_ind[row+"\U0001f600"],:] = -A[row_to_ind[row],:]
                     b[row_to_ind[row+"\U0001f600"]] = -1.*b[row_to_ind[row]]
                     ineq_b[row_to_ind[row+"\U0001f600"]] = True
@@ -143,6 +145,7 @@ def extract_matrix_data(parsed_file_dict):
                     b[row_to_ind[row+"\U0001f606"]] = b[row_to_ind[row]]+abs(float(value))
                     ineq_b[row_to_ind[row+"\U0001f606"]] = True
                 else: #(b-|r|, b) constraint
+                    #negate the b-|r| bound b/c it's a lower bound
                     A[row_to_ind[row+"\U0001f600"],:] = -A[row_to_ind[row],:]
                     b[row_to_ind[row+"\U0001f600"]] = -1.*(b[row_to_ind[row]]-\
                                                                 abs(float(value)))
@@ -170,6 +173,8 @@ def extract_matrix_data(parsed_file_dict):
             elif kind == 'BV': #this is binary variable. We relax to x \in [0,1]
                 u[col_to_ind[column]] = 1.0
                 l[col_to_ind[column]] = 0.0
+            elif kind == 'FR' #free variable. In (-\infty, infty)
+                l[col_to_ind[column]] = -np.inf
             elif kind == "PL": #x \in [0, \infty)
                 continue #this is the default bound. Nothing to do
             else:
