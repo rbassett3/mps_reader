@@ -89,13 +89,13 @@ def extract_matrix_data(parsed_file_dict):
             col_ind = col_to_ind[column]
             if rows[row]=='N': #objective
                 c[col_ind] = value
-            elif rows[row]=='L': #lower bound. negate b/c we only keep track of A @ x <= b
-                row_ind = row_to_ind[row]
-                A[row_ind, col_ind] = -1.0*float(value)
-                ineq_b[row_ind] = True
-            elif rows[row]=='G': #upper bound. don't have to negate
+            elif rows[row]=='L': #'leq' bound. don't have to negate
                 row_ind = row_to_ind[row]
                 A[row_ind, col_ind] = float(value)
+                ineq_b[row_ind] = True
+            elif rows[row]=='G': #'geq' bound. negate b/c we only keep track of A @ x <= b
+                row_ind = row_to_ind[row]
+                A[row_ind, col_ind] = -1.0*float(value)
                 ineq_b[row_ind] = True
             elif rows[row]=='E': #equality constraint
                 row_ind = row_to_ind[row]
@@ -106,10 +106,10 @@ def extract_matrix_data(parsed_file_dict):
     for this_rhs_name in rhs.keys():
         for (row, value) in rhs[this_rhs_name]:
             row_ind = row_to_ind[row]
-            if rows[row]=='L': #lower bound. negate b/c we only keep track of A @ x <= b
-                b[row_ind] = -1.0*float(value)
-            elif rows[row]=='G': #upper bound. don't have to negate
+            if rows[row]=='L': #'leq' bound. don't have to negate
                 b[row_ind] = float(value)
+            elif rows[row]=='G': #'geq' bound. negate b/c we only keep track of A @ x <= b
+                b[row_ind] = -1.0*float(value)
             elif rows[row]=='E': #equality constraint
                 b[row_ind] = float(value)
             else:
