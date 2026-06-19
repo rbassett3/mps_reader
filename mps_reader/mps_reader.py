@@ -12,7 +12,9 @@ def read(path_to_mps_file, strict=True):
     s.t. A_eq @ x = b_eq
          A_ub @ x <= b_ub
          l <= x <= u
-    defines the optimization problem in the mps file.
+    defines the optimization problem in the mps file. It also 
+    returns any constant shift to the objective function
+    specified in the mps file.
     '''
     #this first line contains all the problem data from the mps file
     #including things like variable names. The prob_data just gets the matrices
@@ -32,7 +34,9 @@ def extract_matrix_data(parsed_file_dict):
     s.t. A[ineq_b,:] @ x <= b[ineq_b]
          A[~ineq_b,:] @ x = b[~ineq_b]
          l <= x <= u
-    defines the optimization problem in the mps file.
+    defines the optimization problem in the mps file. It also 
+    returns any constant shift to the objective function
+    specified in the mps file.
     '''
     #extract variables from parsed_file_dict for notational convenience
     #note that obj_shift and prob_name are not used
@@ -175,7 +179,8 @@ def extract_matrix_data(parsed_file_dict):
     return {'c':c, 'A':A, 'b':b, 'ineq_b':ineq_b, 'l':l, 'u':u,\
             'fixed_inds':fixed_inds, 'fixed_vals':fixed_vals,\
             'row_labels':list(row_to_ind.keys()),\
-            'col_labels':list(col_to_ind.keys())}
+            'col_labels':list(col_to_ind.keys()),\
+            'obj_shift':parsed_file_dict['obj_shift']}
 
 def expand_matrix_data(matrix_data):
     '''expand_matrix_data takes a dictionary returned by
@@ -187,7 +192,9 @@ def expand_matrix_data(matrix_data):
     s.t. A_eq @ x = b_eq
          A_ub @ x <= b_ub
          l <= x <= u
-    defines the optimization problem in the mps file.
+    defines the optimization problem in the mps file. It also 
+    returns any constant shift to the objective function
+    specified in the mps file.
     '''
     md = matrix_data 
     c, A, b, ineq_b, l, u, fixed_inds, fixed_vals, row_labs, col_labs=\
@@ -196,7 +203,8 @@ def expand_matrix_data(matrix_data):
     return {'c':c, 'A_eq':A[~ineq_b,:], 'A_ub':A[ineq_b,:],\
             'b_eq':b[~ineq_b], 'b_ub':b[ineq_b], 'l':l, 'u':u,\
             'fixed_inds':fixed_inds, 'fixed_vals':fixed_vals,\
-            'row_labels':row_labs, 'col_labels':col_labs}
+            'row_labels':row_labs, 'col_labels':col_labs,
+            'obj_shift':matrix_data['obj_shift']}
 
 def parse_mps_file(path_to_mps_file, strict=True):
     '''takes mps file path as input and returns five dictionaries, the constant
@@ -350,9 +358,10 @@ def parse_mps_file(path_to_mps_file, strict=True):
 def eliminate_fixed_variables(matrix_data):
     '''Eliminates fixed variables from the dictionary prob_data containing problem data.
     by substituting the fixed value in place of the each fixed variable
-    The dictionary prob_data is modified in place, so this function returns None'''
+    The dictionary prob_data is modified in place'''
     prob_data = matrix_data.copy() #perform reduction on prob_data
     prob_data['b'] -= prob_data['A'][:, prob_data['fixed_inds']] @ prob_data['fixed_vals']
+    prob_data['obj_shift'] += prob_data['c'][prob_data['fixed_inds']] @ prob_data['fixed_vals']
     inds_to_keep = np.ones(prob_data['c'].shape[0], dtype=np.bool_)
     inds_to_keep[prob_data['fixed_inds']] = False
     prob_data['A'] = prob_data['A'][:,inds_to_keep]
