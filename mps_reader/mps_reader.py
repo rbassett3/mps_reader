@@ -86,6 +86,22 @@ def extract_matrix_data(parsed_file_dict):
     ineq_b = np.zeros(m, dtype=np.bool_) #boolean flag for whether the constraint is an ineq
     A = scipy.sparse.dok_matrix((m, n), dtype=np.float64)
 
+    #loop through rows to set b_ineq. I originally had this as part
+    #of the column loop, but some rows (confusingly) have no columns.
+    #i.e. 0 <= 3.14 as a constraint was misclassified as 0 == 3.14 b/c
+    #there was no opportunity to flip the inequality flag. This is a bit
+    #pathological but I'll fix it anyways
+    for rows in rows.keys():
+        if rows[row] != 'N': # \in {L, G, E}
+            row_t = rows[row]
+            row_ind = row_to_ind[row]
+            if row_t=='L' or row_t=='G':
+                ineq_b[row_ind] = True
+            elif row_t=='E':
+                ineq_b[row_ind] = False
+             else:
+                raise ValueError("Row kind " + row_t + " not recognized")
+
     #loop through column section to build c vector and A matrices
     for column in columns.keys():
         rows_for_this_column = columns[column]
@@ -96,11 +112,9 @@ def extract_matrix_data(parsed_file_dict):
             elif rows[row]=='L': #'leq' bound. don't have to negate
                 row_ind = row_to_ind[row]
                 A[row_ind, col_ind] = float(value)
-                ineq_b[row_ind] = True
             elif rows[row]=='G': #'geq' bound. negate b/c we only keep track of A @ x <= b
                 row_ind = row_to_ind[row]
                 A[row_ind, col_ind] = -1.0*float(value)
-                ineq_b[row_ind] = True
             elif rows[row]=='E': #equality constraint
                 row_ind = row_to_ind[row]
                 A[row_ind, col_ind] = float(value)
