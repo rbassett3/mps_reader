@@ -91,7 +91,7 @@ def extract_matrix_data(parsed_file_dict):
     #i.e. 0 <= 3.14 as a constraint was misclassified as 0 == 3.14 b/c
     #there was no opportunity to flip the inequality flag. This is a bit
     #pathological but I'll fix it anyways
-    for rows in rows.keys():
+    for row in rows.keys():
         if rows[row] != 'N': # \in {L, G, E}
             row_t = rows[row]
             row_ind = row_to_ind[row]
