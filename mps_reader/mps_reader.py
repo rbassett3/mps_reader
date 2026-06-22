@@ -99,7 +99,7 @@ def extract_matrix_data(parsed_file_dict):
                 ineq_b[row_ind] = True
             elif row_t=='E':
                 ineq_b[row_ind] = False
-             else:
+            else:
                 raise ValueError("Row kind " + row_t + " not recognized")
 
     #loop through column section to build c vector and A matrices
