@@ -26,18 +26,23 @@ for f in $(find $nld -maxdepth 1 -type f)
     do echo $f;
     $nlnd/decompress.out $f > mps_problems/$(basename $f);
 done
-echo "ungzipping kennington files" 
-#and now let's do the kennington files too 
-for f in $(find $nld/kennington/ -maxdepth 1 -type f)
-    do echo $f;
-    gzip -d --force $f;
-done
 
-echo "uncompressing kennington files" 
-#and now let's do the kennington files too 
-for f in $(find $nld/kennington/ -maxdepth 1 -type f)
-    do echo $f;
-    $nlnd/decompress.out $f > mps_problems/$(basename $f);
-done
-
+keep_kennington=0
+#we have many test problems without kennington, and they're a little larger than the others
+#so we'll remove them. Change above to 1 to keep them and execute the following
+if ((keep_kennington)); then
+	echo "ungzipping kennington files" 
+	#and now let's do the kennington files too 
+	for f in $(find $nld/kennington/ -maxdepth 1 -type f)
+	    do echo $f;
+	    gzip -d --force $f;
+	done
+	
+	echo "uncompressing kennington files" 
+	#and now let's do the kennington files too 
+	for f in $(find $nld/kennington/ -maxdepth 1 -type f)
+	    do echo $f;
+	    $nlnd/decompress.out $f > mps_problems/$(basename $f);
+	done
+fi
 
