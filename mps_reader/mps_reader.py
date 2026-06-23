@@ -73,11 +73,6 @@ def extract_matrix_data(parsed_file_dict):
 
     m = len(rows_expanded)
     row_to_ind = dict(zip(rows_expanded, range(m)))
-    #number of fixed variables. We'll treat these separately
-    num_fixed = len([kind for bnds in bounds.values() for (kind, col, val) in bnds if kind=='FX'])
-    fixed_inds = np.empty(num_fixed, dtype=np.int64)
-    fixed_vals = np.empty(num_fixed, dtype=np.float64)
-    fixed_itr = 0 #how many we've seen as we loop through them later
 
     c = np.zeros(n)
     l = np.zeros(n)
@@ -181,9 +176,8 @@ def extract_matrix_data(parsed_file_dict):
                 l[col_to_ind[column]] = value
             elif kind == 'FX': #why do these variables even exist?
                 #they should be added to the b terms instead
-                fixed_inds[fixed_itr] = col_to_ind[column]
-                fixed_vals[fixed_itr] = float(value)
-                fixed_itr += 1
+                u[col_to_ind[column]] = value
+                l[col_to_ind[column]] = value
             elif kind == 'MI': #x \in [-\infty, 0)
                 u[col_to_ind[column]] = 0.0
                 l[col_to_ind[column]] = -np.inf
@@ -199,7 +193,6 @@ def extract_matrix_data(parsed_file_dict):
     #convert the completed matrices from dok to csr
     A = scipy.sparse.csr_matrix(A)
     return {'c':c, 'A':A, 'b':b, 'ineq_b':ineq_b, 'l':l, 'u':u,\
-            'fixed_inds':fixed_inds, 'fixed_vals':fixed_vals,\
             'row_labels':list(row_to_ind.keys()),\
             'col_labels':list(col_to_ind.keys()),\
             'obj_shift':parsed_file_dict['obj_shift']}
@@ -219,12 +212,11 @@ def expand_matrix_data(matrix_data):
     specified in the mps file.
     '''
     md = matrix_data 
-    c, A, b, ineq_b, l, u, fixed_inds, fixed_vals, row_labs, col_labs=\
+    c, A, b, ineq_b, l, u, row_labs, col_labs=\
         md['c'], md['A'], md['b'], md['ineq_b'], md['l'], md['u'],\
-        md['fixed_inds'], md['fixed_vals'], md['row_labels'], md['col_labels']
+        md['row_labels'], md['col_labels']
     return {'c':c, 'A_eq':A[~ineq_b,:], 'A_ub':A[ineq_b,:],\
             'b_eq':b[~ineq_b], 'b_ub':b[ineq_b], 'l':l, 'u':u,\
-            'fixed_inds':fixed_inds, 'fixed_vals':fixed_vals,\
             'row_labels':row_labs, 'col_labels':col_labs,
             'obj_shift':matrix_data['obj_shift']}
 
@@ -382,17 +374,16 @@ def eliminate_fixed_variables(matrix_data):
     by substituting the fixed value in place of the each fixed variable
     The dictionary prob_data is modified in place'''
     prob_data = matrix_data.copy() #perform reduction on prob_data
-    prob_data['b'] -= prob_data['A'][:, prob_data['fixed_inds']] @ prob_data['fixed_vals']
-    prob_data['obj_shift'] += prob_data['c'][prob_data['fixed_inds']] @ prob_data['fixed_vals']
+    fixed_inds = (prob_data['l']==prob_data['u'])
+    fixed_vals = prob_data['l'][fixed_inds]
+    prob_data['b'] -= prob_data['A'][:, fixed_inds] @ fixed_vals
+    prob_data['obj_shift'] += prob_data['c'][fixed_inds] @ fixed_vals
     inds_to_keep = np.ones(prob_data['c'].shape[0], dtype=np.bool_)
-    inds_to_keep[prob_data['fixed_inds']] = False
+    inds_to_keep[fixed_inds] = False
     prob_data['A'] = prob_data['A'][:,inds_to_keep]
     prob_data['c'] = prob_data['c'][inds_to_keep]
     prob_data['l'] = prob_data['l'][inds_to_keep]
     prob_data['u'] = prob_data['u'][inds_to_keep]
-    #make these arrays empty b/c we've eliminated the fixed variables
-    prob_data['fixed_inds'] = np.empty(0, dtype=np.int64)
-    prob_data['fixed_vals'] = np.empty(0, dtype=np.float64)
     return prob_data
 
 def get_fields_strict(line):
