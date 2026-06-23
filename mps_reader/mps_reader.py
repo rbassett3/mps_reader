@@ -144,8 +144,11 @@ def extract_matrix_data(parsed_file_dict):
                 b[row_to_ind[row+"\U0001f600"]] = -1.*(b[row_to_ind[row]]-abs(float(value)))
                 ineq_b[row_to_ind[row+"\U0001f600"]] = True
             elif rows[row]=='G': #Range adds an upper bound of b[i] + abs(r[i])
-                A[row_to_ind[row+"\U0001f600"],:] = A[row_to_ind[row],:]
-                b[row_to_ind[row+"\U0001f600"]] = (b[row_to_ind[row]]+abs(float(value)))
+                #but be careful b/c remember these were negated in rows section
+                #for the lower bound provided. So to give an upper bound 
+                #we actually need to negate those (previously negated) values
+                A[row_to_ind[row+"\U0001f600"],:] = -A[row_to_ind[row],:]
+                b[row_to_ind[row+"\U0001f600"]] = (-b[row_to_ind[row]]+abs(float(value)))
                 ineq_b[row_to_ind[row+"\U0001f600"]] = True
             elif rows[row]=='E': #equality constraint. Adds an upper and a lower bound
                 #where value depends on the sign
